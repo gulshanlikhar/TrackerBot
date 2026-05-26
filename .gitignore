@@ -1,0 +1,35 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+.venv/
+venv/
+ven/
+
+# Secrets and local config
+config/.env
+config/credentials.json
+data/token.json
+*.env
+credentials.json
+token.json
+
+# Runtime data
+data/*.db
+data/*.sqlite
+*.db
+*.sqlite
+
+# Logs
+logs/
+*.log
+
+# Local caches
+.streamlit/secrets.toml
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
