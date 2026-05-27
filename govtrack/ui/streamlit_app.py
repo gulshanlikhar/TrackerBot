@@ -125,9 +125,16 @@ html, body, [data-testid="stAppViewContainer"] {
     background:#0E1117 !important; color:#E8EAED !important;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 }
-[data-testid="stSidebar"] { background:#151922 !important; border-right:1px solid #2A303A !important; }
-.block-container { padding:1.5rem 2rem 3rem !important; max-width:1400px; }
-#MainMenu,footer,header { visibility:hidden; }
+[data-testid="stSidebar"] { background:#1E2533 !important; border-right:2px solid #6EA8FE !important; }
+.block-container { padding:3.5rem 2rem 3rem !important; max-width:1400px; }
+#MainMenu, footer { visibility:hidden; }
+header, [data-testid="stHeader"] {
+    visibility:visible !important;
+    background:rgba(14,17,23,.96) !important;
+}
+header button, [data-testid="stHeader"] button {
+    color:#E8EAED !important;
+}
 
 /* ── Stat cards (top row of Dashboard) ── */
 .stat-card  { background:#171B24; border:1px solid #2A303A; border-radius:12px; padding:1.1rem 1.3rem 1rem; box-shadow:0 12px 30px rgba(0,0,0,.18); }
@@ -514,7 +521,7 @@ with st.sidebar:
         unsafe_allow_html=True
     )
     st.markdown(
-        '<div style="font-size:11px;color:#8A8980;padding:0 4px 10px">Delivery Governance Platform</div>',
+        '<div style="font-size:11px;color:#AAB3C2;padding:0 4px 10px">Delivery Governance Platform</div>',
         unsafe_allow_html=True
     )
     st.markdown('<div class="div"></div>', unsafe_allow_html=True)

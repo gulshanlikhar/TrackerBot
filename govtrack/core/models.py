@@ -130,7 +130,7 @@ class Email(Base):
     subject         = Column(String)
     sender          = Column(String)                      # "Display Name <email@domain.com>"
     received_at     = Column(DateTime)
-    category        = Column(String)                      # MoM | WBR | Delay | Escalation | General
+    category        = Column(String)                      # MoM | WBR
     risk_signal     = Column(Boolean, default=False)      # True if delay/escalation keywords detected
     snippet         = Column(Text)                        # short Gmail preview text
     summary         = Column(Text)                        # auto-generated summary with risk flags
