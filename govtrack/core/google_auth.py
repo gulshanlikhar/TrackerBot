@@ -40,7 +40,7 @@ def get_creds():
                 creds = None
         if not creds or not creds.valid:
             flow  = InstalledAppFlow.from_client_secrets_file(CREDS_PATH, SCOPES)
-            creds = flow.run_local_server(port=0)
+            creds = flow.run_console(port=0)
         with open(TOKEN_PATH, "w") as f:
             f.write(creds.to_json())
     return creds
