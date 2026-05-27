@@ -510,7 +510,7 @@ def run_alerts(p, emails: list, meetings: list, rules: list):
 
 with st.sidebar:
     st.markdown(
-        '<div style="font-size:18px;font-weight:700;color:#1A1A18;padding:0 4px 2px">🛡️ GovTrack</div>',
+        '<div style="font-size:18px;font-weight:700;color:#F5F7FA;padding:0 4px 2px">🛡️ GovTrack</div>',
         unsafe_allow_html=True
     )
     st.markdown(
