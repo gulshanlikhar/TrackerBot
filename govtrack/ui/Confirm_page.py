@@ -128,7 +128,7 @@ def render_confirm_page(token: str):
         # ── Section 2: Client ─────────────────────────────────────────────────
         st.markdown('<div class="cf-step">', unsafe_allow_html=True)
         st.markdown('<div class="cf-step-label">2 · Is this the correct client?</div>', unsafe_allow_html=True)
-        st.markdown('<div style="font-size:12px;color:#6C6B63;margin-bottom:10px">We detected the client from the "To" field of your email. Please correct if needed.</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:12px;color:#6C6B63;margin-bottom:10px">We detected the client from email participants and body context. Please correct if needed.</div>', unsafe_allow_html=True)
 
         client_default_name  = client_members[0].name  if client_members else project.client_name or ""
         client_default_email = client_members[0].email if client_members else ""
@@ -153,7 +153,7 @@ def render_confirm_page(token: str):
         # ── Section 3: Team Members ───────────────────────────────────────────
         st.markdown('<div class="cf-step">', unsafe_allow_html=True)
         st.markdown('<div class="cf-step-label">3 · Are these the correct team members?</div>', unsafe_allow_html=True)
-        st.markdown('<div style="font-size:12px;color:#6C6B63;margin-bottom:12px">We detected these members from the "Cc" field. Edit names/roles or add/remove below. Leave a row blank to skip it.</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:12px;color:#6C6B63;margin-bottom:12px">These are suggested team members from email participants and context. Confirm the actual members below; leave a row blank to skip it.</div>', unsafe_allow_html=True)
 
         # Show up to 8 editable member rows (pre-filled + 3 blank for new)
         MAX_ROWS = max(8, len(team_members) + 3)
@@ -272,6 +272,7 @@ def render_confirm_page(token: str):
             try:
                 s = _db()
                 proj = s.query(Project).filter_by(pm_confirm_token=token).first()
+                old_pm_email = (proj.pm_email or "").strip().lower()
 
                 # ── Update project fields ─────────────────────────────────────
                 proj.delivery_lead    = pm_name.strip()
@@ -290,7 +291,7 @@ def render_confirm_page(token: str):
 
                 # ── Update PM member record ───────────────────────────────────
                 pm_member = s.query(Member).filter_by(
-                    project_id=proj.id, email=project.pm_email
+                    project_id=proj.id, email=old_pm_email
                 ).first()
                 if pm_member:
                     pm_member.name  = pm_name.strip()

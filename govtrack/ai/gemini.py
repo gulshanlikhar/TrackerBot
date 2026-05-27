@@ -11,6 +11,8 @@ Provides three capabilities:
   4. generate_alerts()   → governance alert blocks from emails + meetings
 """
 
+import re
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # KEYWORD LISTS
@@ -26,6 +28,20 @@ MOM_KEYWORDS = [
 WBR_KEYWORDS = [
     "wbr", "weekly business review", "weekly status",
     "weekly report", "status report"
+]
+
+MOM_CONTEXT_SIGNALS = [
+    "attendees", "participants", "agenda", "discussion points",
+    "key discussion", "decisions", "decision taken", "decisions taken",
+    "action owner", "owner", "due date", "next steps", "open items",
+    "meeting summary", "call summary", "call notes", "follow up items",
+]
+
+WBR_CONTEXT_SIGNALS = [
+    "week ending", "this week", "last week", "next week",
+    "weekly update", "progress update", "accomplishments", "completed this week",
+    "planned for next week", "plan for next week", "risks and issues",
+    "status summary", "health status", "milestone status", "kpi",
 ]
 
 # Triggers email category: Delay — also contributes to risk_signal=True
@@ -62,6 +78,31 @@ def _text(subject: str, snippet: str) -> str:
     return (subject + " " + snippet).lower()
 
 
+def _count_context_hits(text: str, signals: list[str]) -> int:
+    """Count distinct context phrases present in the email text."""
+    return sum(1 for signal in signals if signal in text)
+
+
+def _looks_like_structured_mom(text: str) -> bool:
+    """Detect MoM by meeting-note structure, not only by the word MoM."""
+    if _count_context_hits(text, MOM_CONTEXT_SIGNALS) >= 2:
+        return True
+    return bool(
+        re.search(r"\b(action\s+items?|decisions?|next\s+steps)\b", text)
+        and re.search(r"\b(meeting|call|discussion|review)\b", text)
+    )
+
+
+def _looks_like_structured_wbr(text: str) -> bool:
+    """Detect WBR by weekly-report structure, not only by the word WBR."""
+    if _count_context_hits(text, WBR_CONTEXT_SIGNALS) >= 2:
+        return True
+    return bool(
+        re.search(r"\b(week|weekly)\b", text)
+        and re.search(r"\b(progress|status|risks?|issues?|next\s+week|milestones?)\b", text)
+    )
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # EMAIL CLASSIFICATION
 # ══════════════════════════════════════════════════════════════════════════════
@@ -88,10 +129,10 @@ def classify_email(subject: str, snippet: str) -> tuple[str, bool]:
         return "Delay", True
 
     # MoM and WBR are informational — not inherently risky
-    if any(k in t for k in MOM_KEYWORDS):
+    if any(k in t for k in MOM_KEYWORDS) or _looks_like_structured_mom(t):
         return "MoM", False
 
-    if any(k in t for k in WBR_KEYWORDS):
+    if any(k in t for k in WBR_KEYWORDS) or _looks_like_structured_wbr(t):
         return "WBR", False
 
     # General email — still check for any risk keywords in the broader list

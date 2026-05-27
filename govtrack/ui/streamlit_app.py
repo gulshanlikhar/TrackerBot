@@ -36,7 +36,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from govtrack.core.models import (
     init_db, Session, Project, GovernanceRule,
-    Email, Meeting, Alert, UnmappedEmail
+    Email, Meeting, Alert, UnmappedEmail,
+    generate_project_id,
 )
 
 # Member and migrate_db were added in a later schema version.
@@ -234,17 +235,6 @@ hr { border-color:#2A303A !important; }
 def db():
     """Open and return a new SQLAlchemy session. Caller must close it."""
     return Session()
-
-
-def generate_project_id(session) -> str:
-    """Generate the next sequential PRJ-XXXX project ID. Minimum PRJ-1000."""
-    existing = session.query(Project.project_id).all()
-    max_num  = 999
-    for (pid,) in existing:
-        m = re.match(r"PRJ-(\d+)", (pid or "").upper())
-        if m:
-            max_num = max(max_num, int(m.group(1)))
-    return f"PRJ-{max_num + 1:04d}"
 
 
 def gmail_thread_url(thread_id: str) -> str:

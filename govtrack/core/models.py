@@ -224,6 +224,26 @@ def init_db():
     print("✅ Database tables created.")
 
 
+def generate_project_id(session) -> str:
+    """
+    Generate the next system-owned project ID in PRJ-XXXX order.
+
+    Both manual project creation and email-based auto creation must call this
+    function so project IDs stay sequential and are never supplied by email text.
+    """
+    existing = session.query(Project.project_id).all()
+    max_num = 999
+    for (pid,) in existing:
+        if not pid:
+            continue
+        try:
+            num = int(str(pid).upper().replace("PRJ-", ""))
+            max_num = max(max_num, num)
+        except ValueError:
+            continue
+    return f"PRJ-{max_num + 1:04d}"
+
+
 def migrate_db():
     """
     Safely add any missing columns to an existing database.

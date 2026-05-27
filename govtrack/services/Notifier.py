@@ -249,10 +249,10 @@ def send_pm_confirmation_request(project, pm_email: str, member_emails: list = N
         '<th style="padding:6px 12px;text-align:left;color:#8A8980">Role</th>'
         '</tr></thead><tbody>' + member_rows + '</tbody></table>'
         if member_rows
-        else '<div style="font-size:12px;color:#8A8980">No Cc recipients detected.</div>'
+        else '<div style="font-size:12px;color:#8A8980">No suggested team members detected.</div>'
       }
       <div style="font-size:12px;color:#5C3FD4;margin-top:8px">
-        👉 Click the button above to add, remove, or edit team members.
+        👉 Click the button above to confirm, add, remove, or edit team members.
       </div>
     </div>
 
@@ -333,6 +333,9 @@ def send_project_confirmation(project, pm_email: str, member_emails: list = None
     start   = project.start_date.strftime("%d %b %Y")   if project.start_date   else "—"
     go_live = project.go_live_date.strftime("%d %b %Y") if project.go_live_date else "—"
 
+    member_count = len([e for e in (member_emails or []) if e and e.strip()])
+    description = project.description or "—"
+
     html = f"""<!DOCTYPE html>
 <html>
 <body style="margin:0;padding:0;background:#F5F5F0;font-family:sans-serif;">
@@ -357,7 +360,8 @@ def send_project_confirmation(project, pm_email: str, member_emails: list = None
       <span style="color:#5C3FD4">{project.name}</span>
     </div>
     <div style="font-size:13px;color:#6C6B63;margin-bottom:24px">
-      Your project is now active in GovTrack. Team members have been notified separately.
+      Your submitted details are saved and the project is now active in GovTrack.
+      Team members have been notified separately.
     </div>
 
     <!-- Project details table -->
@@ -392,6 +396,14 @@ def send_project_confirmation(project, pm_email: str, member_emails: list = None
         <td style="padding:10px 16px;color:#8A8980">Delivery %</td>
         <td style="padding:10px 16px;color:#1A1A18">{project.delivery_pct}%</td>
       </tr>
+      <tr>
+        <td style="padding:10px 16px;color:#8A8980;border-top:1px solid #E5E4DE">Team Members</td>
+        <td style="padding:10px 16px;color:#1A1A18;border-top:1px solid #E5E4DE">{member_count}</td>
+      </tr>
+      <tr style="background:#F5F5F0">
+        <td style="padding:10px 16px;color:#8A8980">Description</td>
+        <td style="padding:10px 16px;color:#1A1A18">{description}</td>
+      </tr>
     </table>
 
     <div style="font-size:12px;color:#8A8980;border-top:1px solid #E5E4DE;padding-top:16px">
@@ -404,7 +416,7 @@ def send_project_confirmation(project, pm_email: str, member_emails: list = None
     _smtp_send(
         to        = pm_email,
         cc_list   = [],
-        subject   = f"[GovTrack] ✅ You are the PM for {project.project_id} — {project.name}",
+        subject   = f"[GovTrack] Confirmation Submitted — {project.project_id} | {project.name}",
         html_body = html,
     )
 

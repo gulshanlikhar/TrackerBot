@@ -29,7 +29,7 @@ import requests
 
 from govtrack.core.models import (
     Session, Project, GovernanceRule,
-    Member, Email, UnmappedEmail,
+    Member, Email, UnmappedEmail, generate_project_id,
 )
 from govtrack.core.google_auth import gmail_service
 from govtrack.integrations.gmail_reader import fetch_emails
@@ -137,18 +137,8 @@ NOISE_SUBJECT_PATTERNS = [
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _generate_project_id(db) -> str:
-    """
-    Generate the next sequential project ID in PRJ-XXXX format.
-    Scans all existing IDs, finds the highest number, and increments it.
-    Minimum is PRJ-1000 (starts at 999 + 1) to keep IDs 4 digits minimum.
-    """
-    existing = db.query(Project.project_id).all()
-    max_num  = 999
-    for (pid,) in existing:
-        m = re.match(r"PRJ-(\d+)", (pid or "").upper())
-        if m:
-            max_num = max(max_num, int(m.group(1)))
-    return f"PRJ-{max_num + 1:04d}"
+    """Compatibility wrapper around the shared system ID generator."""
+    return generate_project_id(db)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -739,7 +729,7 @@ def _auto_create_project_from_ai_data(ai_project: dict, email_data: dict, db) ->
     # Send PM confirmation email — PM clicks the link to verify project details
     member_emails = [
         m.email for m in db.query(Member).filter_by(project_id=project.id).all()
-        if m.email and m.email != project.pm_email
+        if m.email and m.email != project.pm_email and m.role not in ("Client", "Client Contact")
     ]
     try:
         send_pm_confirmation_request(project, project.pm_email, member_emails)
@@ -755,7 +745,8 @@ def _auto_create_project_from_ai_data(ai_project: dict, email_data: dict, db) ->
 def _auto_create_project_legacy(project_id: str, email_data: dict) -> "Project":
     """
     Legacy creation path: email contained an explicit PRJ-XXXX ID.
-    Creates the project using that exact ID (no auto-increment).
+    If that ID already exists, returns it. Otherwise GovTrack still creates the
+    project with the next system-generated ID so email text never controls IDs.
 
     Falls back to regex field parsing from email body for metadata.
     Returns existing project if it already exists (idempotent).
@@ -770,7 +761,8 @@ def _auto_create_project_legacy(project_id: str, email_data: dict) -> "Project":
     body      = email_data.get("body", "")
     snippet   = email_data.get("snippet", "")
     text      = f"{subject}\n{body}\n{snippet}"
-    pid_upper = project_id.upper()
+    source_pid = project_id.upper()
+    system_pid = generate_project_id(db)
 
     pm_name, pm_email = _identify_pm_from_email(email_data)
     client_name = (
@@ -779,9 +771,9 @@ def _auto_create_project_legacy(project_id: str, email_data: dict) -> "Project":
         or "Unknown Client"
     )
 
-    # Derive project name from subject by stripping the PRJ-XXXX prefix/suffix
+    # Derive project name from subject by stripping any PRJ-XXXX prefix/suffix
     cleaned = re.sub(
-        r"[\[\(]?" + re.escape(pid_upper) + r"[\]\)]?", "", subject, flags=re.IGNORECASE
+        r"[\[\(]?" + re.escape(source_pid) + r"[\]\)]?", "", subject, flags=re.IGNORECASE
     ).strip()
     cleaned = re.sub(r"^[\s|\-:\u2013\u2014]+", "", cleaned).strip()
     cleaned = re.sub(r"[\s|\-:\u2013\u2014]+$", "", cleaned).strip()
@@ -789,17 +781,18 @@ def _auto_create_project_legacy(project_id: str, email_data: dict) -> "Project":
     # Use cleaned subject as name only if meaningful; otherwise fall back to "Project PRJ-XXXX"
     name    = (
         cleaned if cleaned and len(cleaned) >= 4 and cleaned.lower() not in noise
-        else f"Project {pid_upper}"
+        else f"Project {system_pid}"
     )
 
-    keyword     = client_name if client_name != "Unknown Client" else pid_upper
+    keyword     = client_name if client_name != "Unknown Client" else system_pid
     query_parts = list(dict.fromkeys(filter(None, [
-        f"subject:{pid_upper}", pid_upper,
+        system_pid,
+        source_pid,
         f'"{client_name}"' if client_name != "Unknown Client" else None,
     ])))
 
     project = Project(
-        project_id       = pid_upper,
+        project_id       = system_pid,
         name             = name,
         client_name      = client_name,
         description      = _find_field(text, "Description") or subject,
@@ -835,7 +828,7 @@ def _auto_create_project_legacy(project_id: str, email_data: dict) -> "Project":
     # Send PM confirmation
     member_emails = [
         m.email for m in db.query(Member).filter_by(project_id=project.id).all()
-        if m.email and m.email != project.pm_email
+        if m.email and m.email != project.pm_email and m.role not in ("Client", "Client Contact")
     ]
     try:
         send_pm_confirmation_request(project, project.pm_email, member_emails)
@@ -1505,8 +1498,8 @@ def _watch_loop():
                             fetch_meetings(existing)
 
                         else:
-                            # PRJ-ID found but project doesn't exist yet → create it
-                            print(f"🆕 New project (explicit ID): {project_id}")
+                            # Source email mentioned a PRJ-ID, but system still owns the new ID.
+                            print(f"🆕 New project signal found in email: {project_id}")
                             project = _auto_create_project_legacy(project_id, email_data)
                             if project:
                                 db = Session()

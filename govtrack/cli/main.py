@@ -22,7 +22,8 @@ import sys
 from datetime import datetime, timezone
 from govtrack.core.models import (
     init_db, Session, Project, GovernanceRule,
-    Email, Meeting, Alert, Member
+    Email, Meeting, Alert, Member,
+    generate_project_id as generate_system_project_id,
 )
 from govtrack.integrations.gmail_reader import fetch_emails
 from govtrack.integrations.calendar_reader import fetch_meetings
@@ -35,18 +36,8 @@ from govtrack.integrations.import_pdf import import_pdf
 # ══════════════════════════════════════════════════════════════════════════════
 
 def generate_project_id(db) -> str:
-    """
-    Generate the next sequential project ID in PRJ-XXXX format.
-    Scans all existing IDs, finds the highest number, and increments it.
-    Minimum output is PRJ-1000 (starts at 999 + 1).
-    """
-    existing = db.query(Project.project_id).all()
-    max_num  = 999
-    for (pid,) in existing:
-        m = re.match(r"PRJ-(\d+)", (pid or "").upper())
-        if m:
-            max_num = max(max_num, int(m.group(1)))
-    return f"PRJ-{max_num + 1:04d}"
+    """Compatibility wrapper around the shared system ID generator."""
+    return generate_system_project_id(db)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
