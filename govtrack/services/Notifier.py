@@ -28,9 +28,9 @@ load_dotenv(ENV_PATH)
 # Override with GOVTRACK_EMAIL= in your .env file.
 GOVTRACK_EMAIL = os.getenv("GOVTRACK_EMAIL", "likharji12@gmail.com")
 
-# Base URL for magic links in emails (PM confirmation, add project).
-# Override with STREAMLIT_BASE_URL= in .env for production deployments.
-STREAMLIT_BASE_URL = os.getenv("STREAMLIT_BASE_URL", "http://localhost:8501")
+def _streamlit_base_url() -> str:
+    """Return the public/reachable Streamlit URL used in email links."""
+    return (os.getenv("STREAMLIT_BASE_URL") or "http://localhost:8501").strip().rstrip("/")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -121,7 +121,7 @@ def send_pm_confirmation_request(project, pm_email: str, member_emails: list = N
     Members are NOT CC'd on this email — it's a PM-only action request.
     """
     # Build magic link using the one-time token stored on the project
-    confirm_url = f"{STREAMLIT_BASE_URL}/?confirm_token={project.pm_confirm_token}"
+    confirm_url = f"{_streamlit_base_url()}/?confirm_token={project.pm_confirm_token}"
 
     start   = project.start_date.strftime("%d %b %Y")   if project.start_date   else "—"
     go_live = project.go_live_date.strftime("%d %b %Y") if project.go_live_date else "—"
@@ -604,7 +604,7 @@ def send_unassigned_email_alert(unmapped_email, sender_email: str):
       sender_email   : Oneture email address to send the alert to
     """
     # Deep link to the Add Project page in the Streamlit dashboard
-    add_url  = f"{STREAMLIT_BASE_URL}/?page=Add+Project"
+    add_url  = f"{_streamlit_base_url()}/?page=Add+Project"
     received = (
         unmapped_email.received_at.strftime("%d %b %Y  %H:%M")
         if unmapped_email.received_at else "—"
