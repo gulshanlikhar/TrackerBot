@@ -40,7 +40,12 @@ def get_creds():
                 creds = None
         if not creds or not creds.valid:
             flow  = InstalledAppFlow.from_client_secrets_file(CREDS_PATH, SCOPES)
-            creds = flow.run_console(port=0)
+            flow.redirect_uri = 'urn:ietf:wg:oauth:2.0:oob'
+            auth_url, _ = flow.authorization_url(prompt='consent')
+            print(f'Open this URL in your browser:\n{auth_url}')
+            code = input('Paste the authorization code here: ')
+            flow.fetch_token(code=code)
+            creds = flow.credentials
         with open(TOKEN_PATH, "w") as f:
             f.write(creds.to_json())
     return creds
