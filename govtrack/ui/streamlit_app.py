@@ -37,7 +37,12 @@ sys.path.insert(0, os.path.dirname(__file__))
 from govtrack.core.models import (
     init_db, Session, Project, GovernanceRule,
     Email, Meeting, Alert, UnmappedEmail,
-    generate_project_id,
+    AppUser, ProjectAccess, generate_project_id,
+)
+from govtrack.core.auth import (
+    ROLE_ADMIN, ROLE_GLOBAL_VIEWER, ROLE_PROJECT_MANAGER,
+    authenticate_password, ensure_user, replace_project_access,
+    user_can_see_all, visible_projects_query,
 )
 
 # Member and migrate_db were added in a later schema version.
@@ -226,6 +231,86 @@ hr { border-color:#2A303A !important; }
 [style*="#F5F5F0"] { background:#0E1117 !important; }
 </style>
 """, unsafe_allow_html=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# AUTHENTICATION
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _load_current_user():
+    """Return logged-in AppUser from session_state, or None."""
+    user_id = st.session_state.get("auth_user_id")
+    if not user_id:
+        return None
+    s = Session()
+    try:
+        return s.query(AppUser).filter_by(id=user_id, is_active=True).first()
+    finally:
+        s.close()
+
+
+def _render_login_gate():
+    """
+    Block the dashboard until a GovTrack user signs in.
+
+    First run bootstraps the first admin user. Later users are managed from the
+    Access page by an admin/global viewer.
+    """
+    s = Session()
+    try:
+        user_count = s.query(AppUser).count()
+    finally:
+        s.close()
+
+    if user_count == 0:
+        st.markdown('<div class="page-title">Create Admin User</div>', unsafe_allow_html=True)
+        st.markdown('<div class="page-sub">This first user can see all projects and manage access.</div>', unsafe_allow_html=True)
+        with st.form("first_admin"):
+            name = st.text_input("Name", placeholder="Gaurav")
+            email = st.text_input("Email", placeholder="gaurav@oneture.com")
+            password = st.text_input("Password", type="password")
+            submitted = st.form_submit_button("Create admin", type="primary")
+        if submitted:
+            if not email or "@" not in email or not password:
+                st.error("Valid email and password are required.")
+            else:
+                s = Session()
+                try:
+                    user = ensure_user(s, email, name or email, ROLE_ADMIN, password)
+                    s.commit()
+                    st.session_state.auth_user_id = user.id
+                    st.rerun()
+                except Exception as ex:
+                    s.rollback()
+                    st.error(f"Could not create admin: {ex}")
+                finally:
+                    s.close()
+        st.stop()
+
+    st.markdown('<div class="page-title">GovTrack Sign In</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-sub">Use your GovTrack email/password. Google sign-in users map by the same email.</div>', unsafe_allow_html=True)
+    with st.form("login"):
+        email = st.text_input("Email", placeholder="pm@oneture.com")
+        password = st.text_input("Password", type="password")
+        submitted = st.form_submit_button("Sign in", type="primary")
+    if submitted:
+        s = Session()
+        try:
+            user = authenticate_password(s, email, password)
+            if user:
+                st.session_state.auth_user_id = user.id
+                st.rerun()
+            else:
+                st.error("Invalid email/password or inactive user.")
+        finally:
+            s.close()
+    st.info("Google sign-in requires OAuth configuration on the deployment server. Once enabled, the verified Google email should be mapped to the same user record.")
+    st.stop()
+
+
+CURRENT_USER = _load_current_user()
+if CURRENT_USER is None:
+    _render_login_gate()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -514,11 +599,19 @@ with st.sidebar:
         '<div style="font-size:11px;color:#AAB3C2;padding:0 4px 10px">Delivery Governance Platform</div>',
         unsafe_allow_html=True
     )
+    st.markdown(
+        f'<div style="font-size:11px;color:#AAB3C2;padding:0 4px 10px">'
+        f'{CURRENT_USER.email} · {CURRENT_USER.role}</div>',
+        unsafe_allow_html=True,
+    )
+    if st.button("Sign out", use_container_width=True):
+        st.session_state.pop("auth_user_id", None)
+        st.rerun()
     st.markdown('<div class="div"></div>', unsafe_allow_html=True)
 
     # ── Project selector ──────────────────────────────────────────────────────
     s        = db()
-    projects = s.query(Project).all()
+    projects = visible_projects_query(s, CURRENT_USER).order_by(Project.project_id).all()
     s.close()
 
     if projects:
@@ -553,6 +646,8 @@ with st.sidebar:
         ("Add Member",   "👤"),
         ("Import PDF",   "📄"),
     ]
+    if user_can_see_all(CURRENT_USER):
+        pages.append(("Access", "Access"))
     for label, icon in pages:
         if st.button(f"{icon}  {label}", key=f"nav_{label}", use_container_width=True):
             st.session_state.page = label
@@ -894,7 +989,7 @@ elif page == "Attach Emails":
         st.stop()
 
     s                = db()
-    all_projects     = s.query(Project).order_by(Project.project_id).all()
+    all_projects     = visible_projects_query(s, CURRENT_USER).order_by(Project.project_id).all()
     selected_project = s.query(Project).filter_by(project_id=selected_id).first()
     # Load only unassigned unmapped emails — sorted newest first
     unassigned = (
@@ -1315,6 +1410,92 @@ elif page == "Add Member":
                     st.error(f"Error: {ex}")
 
     st.markdown('</div>', unsafe_allow_html=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE: ACCESS
+# ══════════════════════════════════════════════════════════════════════════════
+
+elif page == "Access":
+    if not user_can_see_all(CURRENT_USER):
+        st.error("You do not have access to this page.")
+        st.stop()
+
+    st.markdown('<div class="page-title">Access Control</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="page-sub">Create Oneture users and map project managers to visible projects.</div>',
+        unsafe_allow_html=True,
+    )
+
+    s = db()
+    all_projects = s.query(Project).order_by(Project.project_id).all()
+    all_users = s.query(AppUser).order_by(AppUser.email).all()
+
+    with st.form("access_user_form"):
+        c1, c2 = st.columns(2)
+        with c1:
+            user_email = st.text_input("User Email *", placeholder="pm@oneture.com")
+            user_name = st.text_input("User Name", placeholder="Project Manager name")
+        with c2:
+            role = st.selectbox(
+                "User Type",
+                [ROLE_PROJECT_MANAGER, ROLE_GLOBAL_VIEWER, ROLE_ADMIN],
+                format_func=lambda r: {
+                    ROLE_PROJECT_MANAGER: "Project manager - mapped projects only",
+                    ROLE_GLOBAL_VIEWER: "Global viewer - all projects",
+                    ROLE_ADMIN: "Admin - all projects and access control",
+                }[r],
+            )
+            temp_password = st.text_input("Password", type="password", help="Leave blank to keep existing password.")
+
+        project_labels = [f"{p.project_id} - {p.name}" for p in all_projects]
+        selected_labels = st.multiselect(
+            "Visible Projects",
+            project_labels,
+            disabled=(role in (ROLE_ADMIN, ROLE_GLOBAL_VIEWER)),
+            help="Admins/global viewers see all projects. Project managers see mapped projects plus projects where PM email matches.",
+        )
+        saved = st.form_submit_button("Save access", type="primary")
+
+    if saved:
+        if not user_email or "@" not in user_email:
+            st.error("Valid user email is required.")
+        else:
+            try:
+                user = ensure_user(s, user_email, user_name or user_email, role, temp_password or None)
+                s.flush()
+                label_to_project = {f"{p.project_id} - {p.name}": p for p in all_projects}
+                mapped = [label_to_project[label] for label in selected_labels]
+                if role == ROLE_PROJECT_MANAGER:
+                    replace_project_access(s, user, mapped, access="manager")
+                else:
+                    replace_project_access(s, user, [], access="viewer")
+                s.commit()
+                st.success(f"Access saved for {user.email}.")
+                st.rerun()
+            except Exception as ex:
+                s.rollback()
+                st.error(f"Could not save access: {ex}")
+
+    st.markdown('<div class="scard">', unsafe_allow_html=True)
+    st.markdown("#### Users")
+    for user in all_users:
+        if user.role in (ROLE_ADMIN, ROLE_GLOBAL_VIEWER):
+            scope = "All projects"
+        else:
+            mapped = (
+                s.query(Project)
+                .join(ProjectAccess, ProjectAccess.project_id == Project.id)
+                .filter(ProjectAccess.user_id == user.id)
+                .order_by(Project.project_id)
+                .all()
+            )
+            direct_pm = s.query(Project).filter(Project.pm_email == user.email).all()
+            visible_ids = sorted({p.project_id for p in mapped + direct_pm})
+            scope = ", ".join(visible_ids) if visible_ids else "No projects mapped"
+        st.markdown(f"- **{user.email}** · `{user.role}` · {scope}")
+    st.markdown('</div>', unsafe_allow_html=True)
+    s.close()
 
 
 # ══════════════════════════════════════════════════════════════════════════════

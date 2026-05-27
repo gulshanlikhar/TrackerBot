@@ -69,6 +69,47 @@ class Project(Base):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# APP USER / PROJECT ACCESS
+# ══════════════════════════════════════════════════════════════════════════════
+
+class AppUser(Base):
+    """
+    A GovTrack application user.
+
+    role controls visibility:
+      admin          : can see and manage all projects/users
+      global_viewer  : can see all projects
+      project_manager: can see only mapped projects and projects where pm_email matches
+    """
+    __tablename__ = "app_users"
+
+    id            = Column(Integer, primary_key=True)
+    email         = Column(String, unique=True, nullable=False)
+    name          = Column(String)
+    role          = Column(String, default="project_manager")
+    auth_provider = Column(String, default="password")  # password | google
+    password_hash = Column(String, nullable=True)
+    is_active     = Column(Boolean, default=True)
+    created_at    = Column(DateTime, default=datetime.utcnow)
+
+    project_access = relationship("ProjectAccess", back_populates="user", cascade="all, delete")
+
+
+class ProjectAccess(Base):
+    """Explicit mapping between one user and one visible project."""
+    __tablename__ = "project_access"
+
+    id         = Column(Integer, primary_key=True)
+    user_id    = Column(Integer, ForeignKey("app_users.id"))
+    project_id = Column(Integer, ForeignKey("projects.id"))
+    access     = Column(String, default="viewer")  # viewer | manager
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user    = relationship("AppUser", back_populates="project_access")
+    project = relationship("Project")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # MEMBER
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -232,7 +273,7 @@ def generate_project_id(session) -> str:
     function so project IDs stay sequential and are never supplied by email text.
     """
     existing = session.query(Project.project_id).all()
-    max_num = 999
+    max_num = 0
     for (pid,) in existing:
         if not pid:
             continue
