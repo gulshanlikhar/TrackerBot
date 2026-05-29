@@ -40,12 +40,13 @@ def get_creds():
                 creds = None
         if not creds or not creds.valid:
             flow  = InstalledAppFlow.from_client_secrets_file(CREDS_PATH, SCOPES)
-            flow.redirect_uri = 'urn:ietf:wg:oauth:2.0:oob'
-            auth_url, _ = flow.authorization_url(prompt='consent')
-            print(f'Open this URL in your browser:\n{auth_url}')
-            code = input('Paste the authorization code here: ')
-            flow.fetch_token(code=code)
-            creds = flow.credentials
+            auth_port = int(os.getenv("GOOGLE_AUTH_PORT", "8080"))
+            creds = flow.run_local_server(
+                host="127.0.0.1",
+                port=auth_port,
+                open_browser=False,
+                prompt="consent",
+            )
         with open(TOKEN_PATH, "w") as f:
             f.write(creds.to_json())
     return creds
