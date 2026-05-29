@@ -26,7 +26,7 @@ load_dotenv(ENV_PATH)
 # Gmail account used as the sender for all outbound emails.
 # Must exactly match the account in token.json.
 # Override with GOVTRACK_EMAIL= in your .env file.
-GOVTRACK_EMAIL = os.getenv("GOVTRACK_EMAIL", "likharji12@gmail.com")
+GOVTRACK_EMAIL = os.getenv("GOVTRACK_EMAIL", "client.update@oneture.com")
 
 def _streamlit_base_url() -> str:
     """Return the public/reachable Streamlit URL used in email links."""

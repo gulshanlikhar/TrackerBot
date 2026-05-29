@@ -74,7 +74,7 @@ CREDENTIALS_PATH=config/credentials.json
 TOKEN_PATH=data/token.json
 AWS_REGION=ap-south-1
 BEDROCK_MODEL_ID=openai.gpt-oss-20b-1:0
-GOVTRACK_EMAIL=your_gmail_account@gmail.com
+GOVTRACK_EMAIL=client.update@oneture.com
 ```
 
 Place your Google OAuth client file here:
