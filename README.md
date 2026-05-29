@@ -5,7 +5,7 @@ signals to help delivery teams monitor projects, emails, meetings, MoM status,
 WBR status, risks, alerts, project members, clients, and PM confirmations.
 
 The application is built with Streamlit, SQLite, Gmail API, Google Calendar API,
-and a modular Python backend.
+AWS Bedrock Converse, and a modular Python backend.
 
 ## Features
 
@@ -72,7 +72,8 @@ Example:
 DATABASE_URL=sqlite:///data/govtrack.db
 CREDENTIALS_PATH=config/credentials.json
 TOKEN_PATH=data/token.json
-GEMINI_API_KEY=your_gemini_api_key
+AWS_REGION=ap-south-1
+BEDROCK_MODEL_ID=openai.gpt-oss-20b-1:0
 GOVTRACK_EMAIL=your_gmail_account@gmail.com
 ```
 
@@ -164,6 +165,6 @@ Remove-Item data/token.json
 python -m streamlit run govtrack/ui/streamlit_app.py
 ```
 
-If Gemini returns `429 Too Many Requests`, wait for quota reset or reduce AI
-usage. The watcher includes noise filters to avoid sending promotional emails to
-Gemini.
+If Bedrock returns an access error, confirm the IAM user/role has
+`bedrock:InvokeModel` permission for the selected model and that model access is
+enabled in the configured AWS region.

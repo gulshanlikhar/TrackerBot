@@ -2,13 +2,13 @@
 alerts.py — Governance check engine for GovTrack.
 
 Reads a project's emails, meetings, and rules from the DB,
-passes them to gemini.py for alert generation, parses the
+passes them to email_rules.py for alert generation, parses the
 result, saves alerts to the DB, and updates project health.
 """
 
 from datetime import datetime
 from govtrack.core.models import Session, Project, Email, Meeting, Alert
-from govtrack.ai.gemini import generate_alerts
+from govtrack.ai.email_rules import generate_alerts
 
 
 def run_governance(project_id: str):
@@ -39,7 +39,7 @@ def run_governance(project_id: str):
 
     # ── Step 2: Format as plain-text summaries ────────────────────────────────
     # These strings are passed to generate_alerts() for keyword scanning.
-    # Fallback strings are used when no data exists — gemini.py detects them
+    # Fallback strings are used when no data exists — email_rules.py detects them
     # and raises "No Emails Synced" / "No Meetings Synced" alerts accordingly.
 
     emails_text = "\n".join(
@@ -82,7 +82,7 @@ def run_governance(project_id: str):
     print(f"{'═'*60}")
 
     # ── Step 5: Parse alert blocks and save to DB ─────────────────────────────
-    # Raw output from gemini.py is split by "---" into individual alert blocks.
+    # Raw output from email_rules.py is split by "---" into individual alert blocks.
     # Each block contains: ALERT [LEVEL], Title: ..., Description: ...
     for block in raw.strip().split("---"):
         block = block.strip()

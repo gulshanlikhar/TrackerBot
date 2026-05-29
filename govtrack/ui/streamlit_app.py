@@ -357,7 +357,7 @@ def attach_unmapped_to_project(session, unmapped, target) -> bool:
 
     Returns True if a new Email row was created, False if it already existed.
     """
-    from govtrack.ai.gemini import classify_email, summarize_email
+    from govtrack.ai.email_rules import classify_email, summarize_email
 
     # Prefix with project ID so the same Gmail message can exist on multiple projects
     storage_msg_id = f"{unmapped.gmail_msg_id}:{target.project_id}"
@@ -527,13 +527,13 @@ def run_alerts(p, emails: list, meetings: list, rules: list):
     """
     Run a fresh governance check for a project and save the results.
 
-    Generates alert blocks from gemini.py, clears old unresolved alerts,
+    Generates alert blocks from email_rules.py, clears old unresolved alerts,
     parses the new blocks, saves them, and updates project health.
     Called from the Alerts page when the user clicks 'Run governance check'.
     """
-    from govtrack.ai.gemini import generate_alerts
+    from govtrack.ai.email_rules import generate_alerts
 
-    # Build plain-text summaries for gemini.py to analyse
+    # Build plain-text summaries for email_rules.py to analyse
     et = "\n".join(
         f"- [{e.category}] {e.received_at.strftime('%b %d')}: "
         f"{e.subject} | Risk: {'yes' if e.risk_signal else 'no'}"
@@ -884,8 +884,8 @@ if page == "Dashboard":
         for e in emails[:6]:
             icon = "⚠️" if e.risk_signal else "📩"
             dt   = e.received_at.strftime("%b %d") if e.received_at else "—"
-            # Skip summaries that start with [Gemini — those are stale placeholder values
-            summ = e.summary[:90] if e.summary and not e.summary.startswith("[Gemini") else ""
+            # Skip summaries that start with [AI — those are stale placeholder values
+            summ = e.summary[:90] if e.summary and not e.summary.startswith("[AI") else ""
             st.markdown(
                 f'<div class="row-item">'
                 f'<div class="row-icon" style="background:#F0EFE9">{icon}</div>'
@@ -907,7 +907,7 @@ if page == "Dashboard":
         status = "🔜 Upcoming" if m.meeting_date >= now else "✅ Past"
         mom    = '<span class="badge b-green">MoM ✓</span>' if m.mom_sent else '<span class="badge b-red">MoM ❌</span>'
         dt     = m.meeting_date.strftime("%b %d, %Y %H:%M")
-        summ   = m.summary[:80] if m.summary and not m.summary.startswith("[Gemini") else ""
+        summ   = m.summary[:80] if m.summary and not m.summary.startswith("[AI") else ""
         st.markdown(
             f'<div class="row-item">'
             f'<div class="row-icon" style="background:#F0EFE9">📅</div>'
@@ -964,7 +964,7 @@ elif page == "Emails":
         for e in fil:
             icon    = "⚠️" if e.risk_signal else "📩"
             dt      = e.received_at.strftime("%b %d, %Y") if e.received_at else "—"
-            summ    = e.summary[:110] if e.summary and not e.summary.startswith("[Gemini") else "—"
+            summ    = e.summary[:110] if e.summary and not e.summary.startswith("[AI") else "—"
             link    = gmail_thread_url(getattr(e, "gmail_thread_id", "") or e.gmail_msg_id)
             thread_html = f' · <a href="{link}" target="_blank">Open thread</a>' if link else ""
             st.markdown(
@@ -1129,7 +1129,7 @@ elif page == "Meetings":
         for m in upcoming:
             dt   = m.meeting_date.strftime("%b %d, %Y  %H:%M")
             mom  = '<span class="badge b-green">MoM ✓</span>' if m.mom_sent else '<span class="badge b-orange">MoM missing</span>'
-            summ = m.summary[:100] if m.summary and not m.summary.startswith("[Gemini") else ""
+            summ = m.summary[:100] if m.summary and not m.summary.startswith("[AI") else ""
             st.markdown(
                 f'<div class="row-item">'
                 f'<div class="row-icon" style="background:#EAE7FC;color:#3D2D9E">🔜</div>'
@@ -1152,7 +1152,7 @@ elif page == "Meetings":
         for m in past:
             dt   = m.meeting_date.strftime("%b %d, %Y  %H:%M")
             mom  = '<span class="badge b-green">MoM ✓</span>' if m.mom_sent else '<span class="badge b-red">MoM ❌</span>'
-            summ = m.summary[:100] if m.summary and not m.summary.startswith("[Gemini") else ""
+            summ = m.summary[:100] if m.summary and not m.summary.startswith("[AI") else ""
             st.markdown(
                 f'<div class="row-item">'
                 f'<div class="row-icon" style="background:#F0EFE9">📅</div>'

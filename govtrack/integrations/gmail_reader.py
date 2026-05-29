@@ -6,25 +6,20 @@ email through a 3-layer relevance filter before classifying and saving.
 
 Layer 0 — Noise block  : instantly rejects known junk senders/subjects
 Layer 1 — Keyword gate : accepts emails with project ID or work keywords
-Layer 2 — AI gate      : Gemini decides for genuinely ambiguous cases
+Layer 2 — AI gate      : configured LLM decides genuinely ambiguous cases
 """
 
-import os
 import re
 import base64
-import requests
 from datetime import datetime
 from govtrack.core.models import Session, Email
 from govtrack.core.google_auth import gmail_service
-from govtrack.ai.gemini import classify_email, summarize_email
+from govtrack.ai.email_rules import classify_email, summarize_email
+from govtrack.ai.llm_provider import llm_json
 from dotenv import load_dotenv
 from govtrack.core.paths import ENV_PATH
 
 load_dotenv(ENV_PATH)
-
-# Gemini API key — optional. Only used in Layer 2 (ambiguous email check).
-# If not set, ambiguous emails are discarded rather than risk adding noise.
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 # Only emails that involve at least one Oneture address are processed.
 # Typo variant "onerute.com" is intentionally included for resilience.
@@ -202,7 +197,7 @@ def _has_work_signal(text: str) -> bool:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# LAYER 2 — AI RELEVANCE GATE (GEMINI)
+# LAYER 2 — AI RELEVANCE GATE
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _ai_is_project_email(
@@ -210,7 +205,7 @@ def _ai_is_project_email(
     project_name: str, client_name: str
 ) -> bool:
     """
-    Ask Gemini whether this email is genuinely project-related.
+    Ask the configured LLM whether this email is genuinely project-related.
 
     Only called when:
       - The email matched by name (not by explicit project ID), AND
@@ -220,10 +215,6 @@ def _ai_is_project_email(
     Falls back to False on any API error — conservative approach
     ensures we never add noise to the project feed.
     """
-    if not GEMINI_API_KEY:
-        # No key configured — discard ambiguous emails rather than risk noise
-        return False
-
     prompt = (
         f"You are a delivery governance assistant.\n"
         f"Project: \"{project_name}\" | Client: \"{client_name}\"\n\n"
@@ -231,35 +222,15 @@ def _ai_is_project_email(
         f"Email snippet: {snippet[:300]}\n\n"
         f"Is this email genuinely related to this project's delivery, "
         f"governance, meetings, risks, or client communication?\n"
-        f"Reply with exactly one word: YES or NO."
+        f"Return only JSON like: {{\"is_project_email\": true}}."
     )
 
     try:
-        url = (
-            f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
-        )
-        resp = requests.post(
-            url,
-            json={"contents": [{"parts": [{"text": prompt}]}]},
-            timeout=8,
-        )
-        resp.raise_for_status()
-
-        # Navigate the nested Gemini response structure to get the answer text
-        answer = (
-            resp.json()
-            .get("candidates", [{}])[0]
-            .get("content", {})
-            .get("parts", [{}])[0]
-            .get("text", "NO")
-            .strip()
-            .upper()
-        )
-        return answer.startswith("YES")
+        answer = llm_json(prompt, fallback={"is_project_email": False})
+        return bool(answer.get("is_project_email", False))
 
     except Exception as e:
-        print(f"     ⚠️  Gemini relevance check failed: {e} — discarding email")
+        print(f"     ⚠️  LLM relevance check failed: {e} — discarding email")
         return False
 
 
@@ -285,7 +256,7 @@ def _check_relevance(
       3. Name found in subject line         → accept (strong signal)
       4. Sender domain matches client       → accept (strong signal)
       5. Name found + work keyword in body  → accept (Layer 1)
-      6. Name found but no work keyword     → ask Gemini (Layer 2)
+      6. Name found but no work keyword     → ask LLM (Layer 2)
       7. No name signal at all              → reject
     """
     full_text = f"{subject} {snippet} {body}"
@@ -365,7 +336,7 @@ def _check_relevance(
     if len(meaningful_text) < 40:
         return False, None, "too_short"
 
-    print(f"     🤖 Ambiguous email — asking Gemini: \"{subject[:60]}\"")
+    print(f"     🤖 Ambiguous email — asking LLM: \"{subject[:60]}\"")
     ai_result = _ai_is_project_email(
         subject, snippet,
         project.name or project.project_id,

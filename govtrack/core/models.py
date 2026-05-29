@@ -160,7 +160,7 @@ class GovernanceRule(Base):
 class Email(Base):
     """
     A Gmail message linked to a project.
-    Classified and summarised by gemini.py at the time of fetch.
+    Classified and summarised by email_rules.py at the time of fetch.
     """
     __tablename__ = "emails"
 

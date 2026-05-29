@@ -1,8 +1,8 @@
 """
-gemini.py — Rule-based AI replacement for GovTrack.
+email_rules.py — Rule-based email and governance helpers for GovTrack.
 
-Originally designed to call the Gemini API, this module now uses
-keyword matching instead — no API key or internet connection needed.
+This module uses keyword/context matching only — no API key or internet
+connection needed.
 
 Provides three capabilities:
   1. classify_email()    → category + risk flag from subject/snippet

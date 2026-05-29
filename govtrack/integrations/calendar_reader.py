@@ -9,7 +9,7 @@ and saves new Meeting rows to the database.
 from datetime import datetime, timedelta, timezone
 from govtrack.core.models import Session, Meeting, GovernanceRule
 from govtrack.core.google_auth import calendar_service
-from govtrack.ai.gemini import summarize_meeting
+from govtrack.ai.email_rules import summarize_meeting
 
 
 def fetch_meetings(project, days_back: int = 90, days_ahead: int = 30):

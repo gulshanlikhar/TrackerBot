@@ -21,11 +21,9 @@ import base64
 import secrets
 import threading
 import json
-import os
 from email.utils import getaddresses
 from datetime import datetime
-
-import requests
+from govtrack.ai.llm_provider import llm_json
 
 from govtrack.core.models import (
     Session, Project, GovernanceRule,
@@ -34,7 +32,7 @@ from govtrack.core.models import (
 from govtrack.core.google_auth import gmail_service
 from govtrack.integrations.gmail_reader import fetch_emails
 from govtrack.integrations.calendar_reader import fetch_meetings
-from govtrack.ai.gemini import classify_email, summarize_email
+from govtrack.ai.email_rules import classify_email, summarize_email
 
 # Load .env — wrapped in try/except so watcher still starts
 # if paths module is unavailable (e.g. during testing)
@@ -68,10 +66,6 @@ WATCHER_QUERY = f"in:inbox -label:{GOVTRACK_LABEL} newer_than:14d"
 
 # Matches explicit project IDs like PRJ-1001 or PRJ-123456 anywhere in text
 PROJECT_ID_PATTERN = re.compile(r"\bPRJ-\d{3,6}\b", re.IGNORECASE)
-
-# Gemini API key — optional. Used for AI matching and multi-project extraction.
-# If not set, those features are skipped and rule-based matching is used only.
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 # Minimum confidence score (0–100) for AI project matching to be accepted
 AI_MATCH_CONFIDENCE_THRESHOLD = 75
@@ -375,11 +369,10 @@ def _identify_pm_from_email(email_data: dict) -> tuple:
 
 def _ai_extract_multiple_projects(email_data: dict) -> list:
     """
-    Use Gemini to extract ALL project discussions from a single email.
+    Use the configured LLM provider to extract ALL project discussions from a single email.
     One email can mention multiple projects — this identifies each one.
 
     Called when no existing project matched AND the email has work signals.
-    Requires GEMINI_API_KEY — returns [] if key is not set.
 
     Returns a list of project dicts with keys:
       name, client_name, description, pm_name, pm_email,
@@ -387,9 +380,6 @@ def _ai_extract_multiple_projects(email_data: dict) -> list:
 
     Returns [] if no projects found or API call fails.
     """
-    if not GEMINI_API_KEY:
-        return []
-
     subject      = email_data.get("subject", "") or ""
     body         = email_data.get("body", "") or ""
     snippet      = email_data.get("snippet", "") or ""
@@ -440,32 +430,7 @@ If no projects found: []
 """
 
     try:
-        url = (
-            "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
-        )
-        resp = requests.post(
-            url,
-            json={
-                "contents":       [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"temperature": 0},  # deterministic output
-            },
-            timeout=15,
-        )
-        resp.raise_for_status()
-
-        raw = (
-            resp.json()
-            .get("candidates", [{}])[0]
-            .get("content", {})
-            .get("parts", [{}])[0]
-            .get("text", "[]")
-            .strip()
-        )
-        # Strip markdown fences if Gemini wraps response in ```json ... ```
-        raw      = re.sub(r"^```(?:json)?|```$", "", raw.strip(), flags=re.MULTILINE).strip()
-        projects = json.loads(raw)
-
+        projects = llm_json(prompt, fallback=[])
         if isinstance(projects, list):
             print(f"   🤖 AI extracted {len(projects)} project(s) from email")
             return projects
@@ -658,7 +623,7 @@ def _save_email_for_project(
 def _auto_create_project_from_ai_data(ai_project: dict, email_data: dict, db) -> "Project":
     """
     Create a new project from AI-extracted data.
-    Used when Gemini identified a new project discussion in an email.
+    Used when the configured LLM identified a new project discussion in an email.
 
     - System-generates the project ID (auto-increment)
     - Falls back to email-derived PM if AI didn't identify one
@@ -1072,7 +1037,7 @@ def _get_thread_text(service, thread_id: str, current_msg_id: str = "") -> str:
         return ""
 
     chunks = []
-    # Only last 6 messages to stay within Gemini context limits
+    # Only last 6 messages to stay within LLM context limits
     for msg in thread.get("messages", [])[-6:]:
         payload = msg.get("payload", {})
         headers = {h["name"]: h["value"] for h in payload.get("headers", [])}
@@ -1108,10 +1073,9 @@ def _project_ai_payload(project) -> dict:
 
 def _ai_match_project(email_data: dict, thread_text: str = ""):
     """
-    Ask Gemini to match an email to an existing project.
+    Ask the configured LLM provider to match an email to an existing project.
 
     Uses the 40 most recently created projects as candidates.
-    Requires GEMINI_API_KEY — returns None if not set.
 
     Safety check: even if AI returns a project_id with high confidence,
     the match is rejected if neither the project name nor calendar_keyword
@@ -1119,9 +1083,6 @@ def _ai_match_project(email_data: dict, thread_text: str = ""):
 
     Returns project_id string or None.
     """
-    if not GEMINI_API_KEY:
-        return None
-
     db = Session()
     try:
         # Limit to 40 most recent projects to keep prompt size manageable
@@ -1156,29 +1117,11 @@ def _ai_match_project(email_data: dict, thread_text: str = ""):
     )
 
     try:
-        url = (
-            "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
-        )
-        resp = requests.post(
-            url,
-            json={
-                "contents":         [{"parts": [{"text": prompt}]}],
-                "generationConfig": {
-                    "temperature":    0,                    # deterministic output
-                    "responseMimeType": "application/json", # force JSON response
-                },
-            },
-            timeout=12,
-        )
-        resp.raise_for_status()
-
-        raw = (
-            resp.json().get("candidates", [{}])[0]
-            .get("content", {}).get("parts", [{}])[0]
-            .get("text", "{}").strip()
-        )
-        data       = json.loads(raw)
+        data = llm_json(prompt, fallback={
+            "project_id": "NONE",
+            "confidence": 0,
+            "reason": "LLM provider failed",
+        })
         project_id = str(data.get("project_id", "NONE")).upper().strip()
         confidence = int(float(data.get("confidence", 0)))
         reason     = str(data.get("reason", ""))[:140]
@@ -1357,7 +1300,7 @@ def _resolve_project_for_email(
     Layer 3 — PRJ-XXXX found in earlier messages of the same Gmail thread
     Layer 4 — Gmail thread ID already saved in the DB (reply chain routing)
     Layer 5 — Project name / client / keyword literal match
-    Layer 6 — Gemini semantic classification (only if Oneture involved or work signal)
+    Layer 6 — LLM semantic classification (only if Oneture involved or work signal)
 
     Returns (project_id: str | None, match_source: str | None)
     """
